@@ -5,141 +5,107 @@ from tabulate import tabulate
 import sys
 import datetime
 
-# Institutional Universe: Top S&P 500 components across sectors
+# EXPANDED UNIVERSE: Mixing Blue-Chip disruptors with "Mid-Cap" high-growth candidates
+# This is where we look for the "Next Netflix" or "Next Tesla"
 TICKERS = [
-    # Tech
-    "AAPL", "MSFT", "GOOGL", "NVDA", "AVGO", "ORCL",
-    # Healthcare
-    "UNH", "LLY", "JNJ", "ABBV", "MRK", "TMO",
-    # Financials
-    "JPM", "V", "MA", "BAC", "MS", "GS",
-    # Consumer Disc
-    "AMZN", "TSLA", "HD", "MCD", "NKE", "SBUX",
-    # Consumer Staples
-    "PG", "KO", "PEP", "COST", "WMT",
-    # Energy
-    "XOM", "CVX", "SLB",
-    # Industrials
-    "CAT", "GE", "UNP", "HON",
-    # Communication
-    "META", "NFLX", "DIS",
+    # The "Rule Breakers" / High Growth Mid-Caps
+    "MDB", "DDOG", "NET", "SNOW", "PLTR", "CRWD", "MELI", "SE", "SHOP", "SQ",
+    "U", "RBLX", "OKTA", "ZS", "TEAM", "DOCU", "BILL", "PATH", "S", "GNS",
+    # Emerging Tech / Genomics / Fintech
+    "BEAM", "EDIT", "PACB", "AFRM", "SOFI", "UPST",
+    # Scalable Platforms (The "Obvious" ones that still have long runways)
+    "NVDA", "TSLA", "NFLX", "META", "AMZN", "GOOGL", "AAPL", "MSFT"
 ]
 
-SECTORS = {
-    "Technology": ["AAPL", "MSFT", "GOOGL", "NVDA", "AVGO", "ORCL"],
-    "Healthcare": ["UNH", "LLY", "JNJ", "ABBV", "MRK", "TMO"],
-    "Financials": ["JPM", "V", "MA", "BAC", "MS", "GS"],
-    "Consumer": ["AMZN", "TSLA", "HD", "MCD", "NKE", "SBUX", "PG", "KO", "PEP", "COST", "WMT"],
-    "Industrials/Energy": ["XOM", "CVX", "SLB", "CAT", "GE", "UNP", "HON"],
-    "Media/Comm": ["META", "NFLX", "DIS"]
-}
-
-def get_stock_data(ticker):
+def get_explosive_growth_data(ticker):
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
         
-        # 1. PEG Ratio (Growth at Reasonable Price) - Lower is better
-        peg = info.get("pegRatio", 2.0)
+        # --- MOTLEY FOOL / RULE BREAKER METRICS ---
         
-        # 2. ROE (Efficiency) - Higher is better
-        roe = info.get("returnOnEquity", 0.0)
+        # 1. Revenue Growth (The Engine) - We want > 20% consistently
+        rev_growth = info.get("revenueGrowth", 0.0)
         
-        # 3. Debt/Equity (Solvency) - Lower is better
-        debt_to_equity = info.get("debtToEquity", 100.0) / 100.0
+        # 2. Market Cap (The "Room to Grow") 
+        # A $3T company (AAPL) rarely 10xs. A $10B company (MDB) can.
+        market_cap = info.get("marketCap", 0)
         
-        # 4. Analyst Ratings (Consensus)
-        # recommendationMean: 1.0 (Strong Buy) to 5.0 (Strong Sell)
-        rating_mean = info.get("recommendationMean", 3.0) 
-        rating_key = info.get("recommendationKey", "hold").replace("_", " ").title()
+        # 3. Gross Margins (Pricing Power / Scalability)
+        # Software-like margins (>70%) are the holy grail of multi-baggers.
+        gross_margins = info.get("grossMargins", 0.0)
         
-        # 5. Distance from 200DMA (Trend)
-        current_price = info.get("currentPrice", info.get("regularMarketPrice", 0))
-        dma_200 = info.get("twoHundredDayAverage", current_price)
-        trend = (current_price - dma_200) / dma_200 if dma_200 else 0
+        # 4. Cash Position vs Debt (Optionality)
+        total_cash = info.get("totalCash", 0)
+        total_debt = info.get("totalDebt", 1)
+        cash_to_debt = total_cash / total_debt if total_debt > 0 else 5.0
         
-        # --- Normalized Scores (0-10) ---
-        # PEG: < 1 is perfect (10), > 3 is poor (0)
-        peg_score = max(0, min(10, (3 - peg) * 5))
+        # 5. Volatility / Beta (Fool strategy embraces volatility)
+        beta = info.get("beta", 1.0)
         
-        # ROE: > 20% is perfect (10), < 5% is poor (0)
-        roe_score = max(0, min(10, roe * 50))
+        # --- SCORING LOGIC ---
         
-        # Debt: < 0.2 is perfect (10), > 1.5 is poor (0)
-        debt_score = max(0, min(10, (1.5 - debt_to_equity) * 7))
+        # Growth Score: 0-40 points. (30%+ growth is the sweet spot)
+        growth_score = min(40, rev_growth * 100)
         
-        # Analyst: 1.0 -> 10, 3.0 -> 5, 5.0 -> 0
-        analyst_score = max(0, min(10, (5 - rating_mean) * 2.5))
-        
-        # Trend: Positive trend but not overextended
-        if 0.05 < trend < 0.20:
-            trend_score = 10
-        elif trend > 0.20:
-            trend_score = 7 
-        elif trend > 0:
-            trend_score = 5 
+        # Scale Score: 0-20 points. (Smaller is better for 10x potential)
+        # < $10B = 20 pts, $10B-$50B = 15 pts, $50B-$200B = 10 pts, > $500B = 5 pts
+        if market_cap < 10_000_000_000:
+            scale_score = 20
+        elif market_cap < 50_000_000_000:
+            scale_score = 15
+        elif market_cap < 200_000_000_000:
+            scale_score = 10
         else:
-            trend_score = 2 
+            scale_score = 5
             
-        # Weighted Total Score
-        total_score = (
-            (peg_score * 0.35) + 
-            (roe_score * 0.25) + 
-            (debt_score * 0.15) + 
-            (analyst_score * 0.15) + 
-            (trend_score * 0.10)
-        )
+        # Profitability/Moat Score: 0-20 points. (High gross margins indicate a moat)
+        moat_score = min(20, gross_margins * 25)
+        
+        # Optionality Score: 0-20 points. (Cash to burn for R&D/Acquisitions)
+        opt_score = min(20, cash_to_debt * 4)
+        
+        total_score = growth_score + scale_score + moat_score + opt_score
         
         return {
             "Ticker": ticker,
-            "Score": round(total_score, 2),
-            "Price": current_price,
-            "Rating": f"{rating_key} ({rating_mean})",
-            "PEG": peg,
-            "ROE": f"{roe*100:.1f}%",
-            "D/E": round(debt_to_equity, 2),
-            "Trend": f"{trend*100:+.1f}%",
-            "Sector": next((s for s, tks in SECTORS.items() if ticker in tks), "Other")
+            "Alpha Score": round(total_score, 2),
+            "Rev Growth": f"{rev_growth*100:.1f}%",
+            "Mkt Cap": f"${market_cap/1e9:.1f}B",
+            "Gross Margin": f"{gross_margins*100:.1f}%",
+            "Price": info.get("currentPrice", 0),
+            "Rating": info.get("recommendationKey", "N/A").title(),
+            "Thesis": "High-Velocity Disruptor" if scale_score >= 15 else "Scalable Giant"
         }
     except Exception as e:
         return None
 
 def main():
-    print(f"--- Alpha Analyst Morning Report: {datetime.date.today()} ---")
-    print("Synthesizing Fundamental, Technical, and Analyst Consensus data...")
+    print(f"--- Alpha Analyst: RULE BREAKER REPORT ({datetime.date.today()}) ---")
+    print("Hunting for the 'Next Netflix': High Growth, High Margin, Scalable Platforms...")
     
     results = []
     for ticker in TICKERS:
-        data = get_stock_data(ticker)
+        data = get_explosive_growth_data(ticker)
         if data:
             results.append(data)
     
-    df = pd.DataFrame(results)
+    df = pd.DataFrame(results).sort_values(by="Alpha Score", ascending=False)
     
-    # Global Ranking
-    df = df.sort_values(by="Score", ascending=False)
-    df.insert(0, "Rank", range(1, len(df) + 1))
+    # Select Top 10 by Alpha Score (Potential Multi-Baggers)
+    top_10 = df.head(10).copy()
+    top_10.insert(0, "Rank", range(1, 11))
     
-    # Diversification Selection (Top from each sector)
-    top_picks = []
-    for sector in SECTORS.keys():
-        sector_stocks = df[df["Sector"] == sector].head(2)
-        top_picks.extend(sector_stocks.to_dict("records"))
+    cols = ["Rank", "Ticker", "Alpha Score", "Rev Growth", "Mkt Cap", "Gross Margin", "Rating", "Thesis"]
     
-    # Final Top 10 Diversified
-    top_picks_df = pd.DataFrame(top_picks).sort_values(by="Score", ascending=False).head(10)
-    # Recalculate rank display for the final 10
-    top_picks_df["Display Rank"] = range(1, 11)
+    print("\n--- TOP 10 'RULE BREAKER' PICKS (EXPLOSIVE POTENTIAL) ---")
+    print(tabulate(top_10[cols], headers="keys", tablefmt="github", showindex=False))
     
-    cols = ["Display Rank", "Ticker", "Score", "Rating", "Price", "PEG", "ROE", "Trend", "Sector"]
-    
-    print("\n--- TOP 10 INSTITUTIONAL PICKS (RANKED & DIVERSIFIED) ---")
-    print(tabulate(top_picks_df[cols], headers="keys", tablefmt="github", showindex=False))
-    
-    print("\n--- ANALYST THESIS ---")
-    print("1. Ranking: Quantitative blend of growth, efficiency, and wall street sentiment.")
-    print("2. Consensus: Integrated mean ratings from major investment banks.")
-    print("3. Selection: Diversified across sectors to minimize idiosyncratic risk.")
+    print("\n--- THE 'FOOLISH' INVESTMENT THESIS ---")
+    print("1. Revenue Growth is King: We prioritize top-line acceleration over current PE ratios.")
+    print("2. Market Cap Ceiling: Smaller companies have much higher 'Alpha' potential (The 10x Factor).")
+    print("3. Moats & Margins: High gross margins prove the company has an unfair advantage in its niche.")
+    print("4. Volatility is an Opportunity: These stocks will swing wildly. Hold for 3-5+ years.")
 
 if __name__ == "__main__":
     main()
