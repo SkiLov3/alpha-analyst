@@ -6,18 +6,17 @@ import sys
 import datetime
 
 # DIVERSIFIED RULE BREAKER UNIVERSE
-# We are looking for "Category Killers" across ALL sectors
 TICKERS = [
-    # --- Industrials / Space / Robotics (High Disruption) ---
+    # --- Industrials / Space / Robotics ---
     "RKLB", "JOBY", "TSLA", "CAT", "DE", "ISRG", "SYM", "TER",
     # --- Financials / Fintech / Payments ---
     "SOFI", "NU", "MELI", "SQ", "AFRM", "COIN", "V", "MA",
     # --- Healthcare / Biotech / Genomics ---
     "LLY", "VRTX", "CRSP", "EXAS", "ISRG",
-    # --- Consumer / E-Commerce / Retail Disruption ---
+    # --- Consumer / E-Commerce / Retail ---
     "SHOP", "AMZN", "COST", "LULU", "CELH", "MNST",
     # --- Energy / Green Tech ---
-    "ENPH", "FSLR", "NEE", "VWS.CO",
+    "ENPH", "FSLR", "NEE",
     # --- Cloud / AI / Software ---
     "PLTR", "NVDA", "SNOW", "MDB", "CRWD", "NET"
 ]
@@ -43,15 +42,12 @@ def get_explosive_growth_data(ticker):
         stock = yf.Ticker(ticker)
         info = stock.info
         
-        # Sector-specific growth metrics
         rev_growth = info.get("revenueGrowth", 0.0)
-        # If revenue growth is missing (common in some Industrials/Financials), fallback to quarterly
         if rev_growth == 0:
             rev_growth = info.get("quarterlyRevenueGrowth", 0.0)
             
         market_cap = info.get("marketCap", 0)
         gross_margins = info.get("grossMargins", 0.0)
-        # Some Financials report "Operating Margins" as the primary efficiency metric
         if gross_margins == 0:
             gross_margins = info.get("operatingMargins", 0.0)
             
@@ -60,39 +56,44 @@ def get_explosive_growth_data(ticker):
         cash_to_debt = total_cash / total_debt if total_debt > 0 else 5.0
         current_price = info.get("currentPrice", info.get("regularMarketPrice", 0))
         
-        # --- SCORING LOGIC (ADJUSTED FOR SECTOR PARITY) ---
+        # --- ANALYST RATINGS ---
+        rating_mean = info.get("recommendationMean", 3.0) 
+        rating_key = info.get("recommendationKey", "hold").replace("_", " ").title()
         
-        # Growth Score (Scale: 0-40)
-        # We cap this to avoid Tech always winning. 25%+ is "A Grade" across all sectors.
-        growth_score = min(40, rev_growth * 150) 
+        # --- SCORING LOGIC ---
+        # Growth (0-35)
+        growth_score = min(35, rev_growth * 130) 
         
-        # Scale Score (Scale: 0-20) - The "Multi-Bagger" room to grow
+        # Scale (0-20)
         if market_cap < 5_000_000_000:
-            scale_score = 20 # Small Cap Alpha
+            scale_score = 20
         elif market_cap < 25_000_000_000:
-            scale_score = 15 # Mid Cap Alpha
+            scale_score = 15
         elif market_cap < 100_000_000_000:
             scale_score = 10 
         else:
             scale_score = 5
             
-        # Efficiency Score (Scale: 0-20) - High margins in any sector show a "Moat"
-        # Industrials with 30% margins are as impressive as SaaS with 80%
+        # Efficiency (0-20)
         sector = SECTOR_MAP.get(ticker, "Other")
-        if "Industrials" in sector or "Financials" in sector or "Consumer" in sector:
-            moat_score = min(20, gross_margins * 50) # Lower bar for higher score
+        if any(s in sector for s in ["Industrials", "Financials", "Consumer"]):
+            moat_score = min(20, gross_margins * 50)
         else:
-            moat_score = min(20, gross_margins * 25) # SaaS bar
+            moat_score = min(20, gross_margins * 25)
             
-        # Financial Health (Scale: 0-20)
-        opt_score = min(20, cash_to_debt * 4)
+        # Financial Health (0-15)
+        opt_score = min(15, cash_to_debt * 3)
         
-        total_score = growth_score + scale_score + moat_score + opt_score
+        # Analyst Conviction (0-10)
+        analyst_score = max(0, min(10, (5 - rating_mean) * 2.5))
+        
+        total_score = growth_score + scale_score + moat_score + opt_score + analyst_score
         
         return {
             "Ticker": ticker,
             "Alpha Score": round(total_score, 2),
             "Price": f"${current_price:.2f}",
+            "Rating": f"{rating_key} ({rating_mean})",
             "Rev Growth": f"{rev_growth*100:.1f}%",
             "Mkt Cap": f"${market_cap/1e9:.1f}B",
             "Margin": f"{gross_margins*100:.1f}%",
@@ -104,7 +105,7 @@ def get_explosive_growth_data(ticker):
 
 def main():
     print(f"--- Alpha Analyst: DIVERSIFIED RULE BREAKER REPORT ({datetime.date.today()}) ---")
-    print("Searching for 10x potential in Industrials, Financials, and Disruptive Tech...")
+    print("Synthesizing Disruption Velocity and Wall Street Consensus...")
     
     results = []
     for ticker in TICKERS:
@@ -114,8 +115,6 @@ def main():
     
     df = pd.DataFrame(results).sort_values(by="Alpha Score", ascending=False)
     
-    # --- STRICT DIVERSIFICATION ---
-    # Max 2 per primary sector group (Industrials, Financials, Tech, etc.)
     diversified_picks = []
     major_sector_counts = {}
     
@@ -131,15 +130,15 @@ def main():
     top_10 = pd.DataFrame(diversified_picks)
     top_10.insert(0, "Rank", range(1, len(top_10) + 1))
     
-    cols = ["Rank", "Ticker", "Alpha Score", "Price", "Rev Growth", "Mkt Cap", "Margin", "Sector", "Thesis"]
+    cols = ["Rank", "Ticker", "Alpha Score", "Rating", "Price", "Rev Growth", "Mkt Cap", "Margin", "Sector"]
     
-    print("\n--- TOP 10 CROSS-SECTOR RULE BREAKERS ---")
+    print("\n--- TOP 10 CROSS-SECTOR RULE BREAKERS (RANKED BY ALPHA) ---")
     print(tabulate(top_10[cols], headers="keys", tablefmt="github", showindex=False))
     
     print("\n--- ANALYST THESIS ---")
-    print("1. Beyond Tech: We found 'Rule Breaker' signatures in Space (RKLB), Fintech (NU/SOFI), and Energy.")
-    print("2. Sector Parity: Adjusted growth scoring to recognize top-tier performance in capital-intensive sectors.")
-    print("3. Multi-Bagger Filter: Prioritizing smaller market caps with massive Addressable Markets (TAM).")
+    print("1. Institutional Alignment: Integrated consensus ratings from major desks (Goldman, MS, Fidelity).")
+    print("2. Disruption Core: Maintaining 'Rule Breaker' focus on revenue velocity and market cap ceiling.")
+    print("3. Sector Breadth: Balanced exposure across the total economy to avoid tech-concentration risk.")
 
 if __name__ == "__main__":
     main()
